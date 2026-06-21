@@ -169,12 +169,11 @@ function detectFileType(file: File) {
 // ─── CORE ENDPOINT ─────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
+  let action: "summary" | "quiz" | "flashcard" = "summary"; // Deklarasi di luar agar bisa diakses catch
   try {
     const formData = await request.formData();
     const file = formData.get("file");
-    
-    // Default action ke 'summary' jika tidak dikirim (untuk backward compatibility sementara)
-    const action = (formData.get("action") as "summary" | "quiz" | "flashcard") || "summary";
+    action = (formData.get("action") as "summary" | "quiz" | "flashcard") || "summary";
 
     if (!file || !(file instanceof File)) return NextResponse.json({ error: "Tidak ada dokumen yang dikirim." }, { status: 400 });
     if (file.size > MAX_FILE_SIZE_BYTES) return NextResponse.json({ error: "Ukuran dokumen melebihi batas." }, { status: 413 });
@@ -191,8 +190,10 @@ export async function POST(request: Request) {
       let extractedText: string;
       try {
         const extHint = fileType.ext.replace(".", ""); 
-        const ast: any = await parseOffice(buffer, { fileType: extHint });
-        extractedText = typeof ast === "string" ? ast : typeof ast.toText === "function" ? ast.toText() : JSON.stringify(ast);
+        // Menggunakan 'any' secara eksplisit di sini untuk menghindari strict type checking
+        const ast: any = await parseOffice(buffer, { fileType: extHint as any });
+        extractedText = typeof ast === "string" ? ast : (ast?.toText ? ast.toText() : JSON.stringify(ast));
+        
         if (!extractedText || extractedText.length < 20) throw new Error("Teks kosong.");
       } catch (e: any) {
         return NextResponse.json({ error: "Gagal membaca isi dokumen." }, { status: 422 });
@@ -203,7 +204,7 @@ export async function POST(request: Request) {
     const result = await generateWithRetry(generateInput, action);
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store", "Content-Type": "application/json" } });
   } catch (error: any) {
-    console.error(`[Stuby] Error API pada action [${error?.action || "unknown"}]:`, error);
+    console.error(`[Stuby] Error API pada action [${action}]:`, error);
     return NextResponse.json({ error: "Terjadi kesalahan server saat memproses AI." }, { status: 500 });
   }
 }
